@@ -41,6 +41,7 @@ def init_db(url: str | None = None) -> None:
 
     SessionLocal = sessionmaker(bind=_engine, autoflush=False, expire_on_commit=False)
     Base.metadata.create_all(_engine)
+    _migrate(_engine)
     from app.service import seed
 
     db = SessionLocal()
@@ -48,6 +49,25 @@ def init_db(url: str | None = None) -> None:
         seed(db)
     finally:
         db.close()
+
+
+def _migrate(engine) -> None:
+    """Add audit columns to databases created before calculation versioning."""
+    columns = {
+        "engine_version": "VARCHAR(16)",
+        "knowledge_version": "VARCHAR(32)",
+        "input_snapshot": "TEXT",
+        "assumption_snapshot": "TEXT",
+        "output_snapshot": "TEXT",
+    }
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(calculations)").fetchall()
+        }
+        for name, column_type in columns.items():
+            if name not in existing:
+                connection.exec_driver_sql(f"ALTER TABLE calculations ADD COLUMN {name} {column_type}")
 
 
 def get_session() -> Iterator[Session]:

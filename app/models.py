@@ -102,6 +102,11 @@ class CalculationRow(Base):
     kind: Mapped[str] = mapped_column(String(24), default="base")
     label: Mapped[str] = mapped_column(String(160), default="Current plan")
     result: Mapped[dict] = mapped_column(JSON)
+    engine_version: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    knowledge_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    input_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    assumption_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    output_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     session: Mapped[SessionRow] = relationship(back_populates="calculations")

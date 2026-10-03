@@ -20,6 +20,8 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import date
+
+from app.knowledge import KNOWLEDGE_VERSION
 from typing import Any
 
 
@@ -88,7 +90,7 @@ def _closed(inputs: Inputs, key: str) -> bool:
     return _source(inputs, key) in {"user", "skipped", "assumption"}
 
 
-def calculate(inputs: Inputs) -> dict[str, Any]:
+def calculate(inputs: Inputs, include_levers: bool = True) -> dict[str, Any]:
     assumptions: list[dict[str, Any]] = []
     facts: list[dict[str, Any]] = []
 
@@ -340,7 +342,7 @@ def calculate(inputs: Inputs) -> dict[str, Any]:
         years_source=years_source,
         children=per_child,
     )
-    comparison = _comparison(need_profile, inputs)
+    comparison = _comparison(need_profile, inputs, mortgage_years)
     missing = _missing(inputs)
     ready = gross > 0
     open_essentials = [item["key"] for item in missing if item["essential"]]
@@ -350,10 +352,10 @@ def calculate(inputs: Inputs) -> dict[str, Any]:
         "ready": ready,
         "completeness": completeness,
         "formula": (
-            "Coverage need = income replacement + mortgage + other debt + education + other needs + legacy goal. "
-            "Protection gap = coverage need − work coverage − personal coverage − earmarked savings. "
-            "Income replacement = annual income × replacement percent × years. "
-            "No discount rate or inflation factor is applied, so the arithmetic stays visible."
+            "The estimate adds income support, the mortgage, other debt, education, anything else you named, and a lifelong amount if you set one. "
+            "It then subtracts coverage you already have and savings you said can be used. "
+            "Income support is your income, times the share you chose, times the number of years. "
+            "Nothing is adjusted for inflation, so you can follow each step."
         ),
         "components": components,
         "gross_need": gross,
@@ -371,6 +373,25 @@ def calculate(inputs: Inputs) -> dict[str, Any]:
         ),
         "facts": facts,
         "assumptions": assumptions,
+        "income_assumption": _income_assumption(inputs, percent, percent_source, years, years_source, income_amount),
+        "provenance": _provenance(
+            inputs,
+            percent,
+            percent_source,
+            years,
+            years_source,
+            income_amount,
+            mortgage_amount,
+            debt_amount,
+            education_amount,
+            education_estimated,
+            employer,
+            personal,
+            savings,
+            gap,
+        ),
+        "build_steps": _build_steps(inputs, years, years_source, percent_source, education_estimated),
+        "audit": {"engine_version": "1.0", "knowledge_version": KNOWLEDGE_VERSION},
         "timeline": timeline,
         "need_profile": need_profile,
         "comparison": comparison,
@@ -385,6 +406,7 @@ def calculate(inputs: Inputs) -> dict[str, Any]:
             legacy=legacy_amount,
         ),
         "professional_questions": _professional_questions(inputs, need_profile, education_estimated),
+        "levers": _biggest_levers(inputs, gap) if include_levers and ready else [],
         "missing": missing,
         "children": per_child,
         "resolved": {
@@ -661,75 +683,205 @@ def _need_profile(
     }
 
 
-def _comparison(profile: dict[str, Any], inputs: Inputs) -> dict[str, Any]:
-    horizon = profile["horizon_years"] or 0
-    if horizon <= 10:
-        suggested = 10
-    elif horizon <= 15:
-        suggested = 15
-    elif horizon <= 20:
-        suggested = 20
-    elif horizon <= 30:
-        suggested = 30
-    else:
-        suggested = None
+def _income_assumption(
+    inputs: Inputs,
+    percent: float | None,
+    percent_source: str,
+    years: int | None,
+    years_source: str,
+    amount: int,
+) -> dict[str, Any] | None:
+    if not inputs.annual_income or not percent or not years:
+        return None
+    starting = percent_source != "user" or years_source != "user"
+    return {
+        "annual_income": money(inputs.annual_income),
+        "percent": round(percent * 100),
+        "percent_source": percent_source,
+        "years": years,
+        "years_source": years_source,
+        "amount": amount,
+        "headline": "Starting assumptions — you can change these." if starting else "You set these income-support choices.",
+    }
 
-    if suggested:
+
+def _mark(source: str) -> str:
+    if source == "user":
+        return "user"
+    if source in {"assumption", "estimated"}:
+        return "assumption"
+    if source == "skipped":
+        return "assumption"
+    return "unknown"
+
+
+def _provenance(
+    inputs: Inputs,
+    percent: float | None,
+    percent_source: str,
+    years: int | None,
+    years_source: str,
+    income_amount: int,
+    mortgage_amount: int,
+    debt_amount: int,
+    education_amount: int,
+    education_estimated: bool,
+    employer: int,
+    personal: int,
+    savings: int,
+    gap: int,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+
+    def add(mark: str, label: str, value: str) -> None:
+        rows.append({"mark": mark, "label": label, "value": value})
+
+    if inputs.annual_income is not None:
+        add(_mark(_source(inputs, "annual_income", "user")), "Annual income", fmt(inputs.annual_income))
+    if percent and inputs.annual_income:
+        add(_mark(percent_source), "Portion selected", f"{round(percent * 100)}%")
+    if years and inputs.annual_income:
+        add(_mark(years_source), "Support period", f"{years} years")
+    if income_amount:
+        add("calculated", "Income-support amount", fmt(income_amount))
+    if inputs.mortgage_balance is not None:
+        add(_mark(_source(inputs, "mortgage_balance", "user")), "Mortgage", fmt(mortgage_amount))
+    if debt_amount or inputs.other_debt is not None:
+        add(_mark(_source(inputs, "other_debt", "user")), "Other debt", fmt(debt_amount))
+    if education_amount:
+        add("assumption" if education_estimated else "user", "Education", fmt(education_amount))
+    if employer or inputs.existing_employer_coverage is not None:
+        add(_mark(_source(inputs, "existing_employer_coverage", "user")), "Work coverage", fmt(employer))
+    if personal:
+        add(_mark(_source(inputs, "existing_personal_coverage", "user")), "Personal coverage", fmt(personal))
+    if savings:
+        add(_mark(_source(inputs, "savings_allocated", "user")), "Earmarked savings", fmt(savings))
+    if gap or income_amount or mortgage_amount:
+        add("calculated", "Protection gap", fmt(gap))
+    add("source", "Product education", "Lincoln public pages")
+    return rows
+
+
+def _build_steps(
+    inputs: Inputs,
+    years: int | None,
+    years_source: str,
+    percent_source: str,
+    education_estimated: bool,
+) -> list[str]:
+    steps: list[str] = []
+    if inputs.annual_income is not None and _source(inputs, "annual_income", "user") == "user":
+        steps.append("Used the income you provided")
+    elif inputs.annual_income is not None:
+        steps.append("Used the income on the plan")
+    if inputs.annual_income and years:
+        if years_source != "user" or percent_source != "user":
+            steps.append("Used the starting 70% and 10-year income-support assumption")
+        else:
+            steps.append(f"Used your selected {years}-year support period")
+    if inputs.mortgage_balance:
+        steps.append("Added the mortgage balance you provided")
+    if inputs.other_debt:
+        steps.append("Added the other debt you provided")
+    if inputs.include_education and education_estimated:
+        steps.append("Included the education placeholder, marked as an estimate")
+    elif inputs.include_education:
+        steps.append("Included the education amount you provided")
+    if inputs.existing_employer_coverage:
+        steps.append("Subtracted existing employer coverage")
+    if inputs.existing_personal_coverage:
+        steps.append("Subtracted existing personal coverage")
+    if inputs.savings_allocated:
+        steps.append("Subtracted savings you earmarked")
+    return steps
+
+
+def _period_relation(years: int, horizon: int, mortgage_years: int | None) -> str:
+    if mortgage_years and years < mortgage_years:
+        return "Ends before the mortgage timeline."
+    if horizon and years > horizon:
+        return "Extends beyond the major temporary needs."
+    if horizon and years < horizon:
+        return f"Shorter than the longest temporary need (~{horizon} years)."
+    if mortgage_years and years > mortgage_years:
+        return "Extends past the mortgage timeline."
+    if horizon and years == horizon:
+        return "Matches the longest temporary need on this map."
+    return "A level-premium period described in Lincoln's public term materials."
+
+
+def _comparison(profile: dict[str, Any], inputs: Inputs, mortgage_years: int | None = None) -> dict[str, Any]:
+    horizon = profile["horizon_years"] or 0
+    mortgage_years = mortgage_years or inputs.mortgage_years_remaining
+    periods = [
+        {"years": years, "relation": _period_relation(years, horizon, mortgage_years)}
+        for years in (10, 15, 20, 30)
+    ]
+    if horizon > 30:
         term_period = (
-            f"Level-premium term periods are commonly offered for 10, 15, 20, or 30 years. "
-            f"The longest time-bound item on your map is about {horizon} years, so a {suggested}-year period is a concrete thing to discuss."
+            f"Your longest major temporary need lasts ~{horizon} years, past the 30-year level-premium period "
+            "described in Lincoln's public term materials. Anything meant to last longer is part of the permanent-coverage conversation."
         )
-    elif horizon > 30:
+    elif horizon:
         term_period = (
-            f"The longest item on your map runs about {horizon} years. Common level-premium term periods stop at 30 years, "
-            f"so anything meant to last beyond that is part of the permanent-coverage conversation."
+            f"Your longest major temporary need lasts ~{horizon} years. "
+            "Lincoln's public term materials describe level-premium periods of 10, 15, 20, and 30 years. "
+            "Availability depends on the product, age, and underwriting. This is a timeline comparison, not a product recommendation."
         )
     else:
-        term_period = "Once a few timelines are filled in, this panel names a term length that matches them."
+        term_period = "Once a few timelines are filled in, this panel shows how 10-, 15-, 20-, and 30-year periods sit against them."
 
     term_points = [
-        "Designed for a defined period, which matches needs that end — a mortgage, income support, or a child's dependency.",
-        "Premiums for a level-premium term period are generally fixed for that period, and the death benefit is a stated face amount.",
-        "Initial cost is generally lower than permanent coverage of a similar face amount.",
-        "There is no cash-value account to draw on or to borrow against.",
+        "Limited period. It lines up with needs that end, such as a mortgage, income support, or a child's dependency.",
+        "Generally lower initial cost than permanent coverage of a similar face amount.",
+        "No cash-value growth.",
     ]
     permanent_points = [
-        "Permanent coverage is built to last longer than a term period, sometimes for a lifetime. Whole life is the traditional form: a lifelong death benefit, typically a fixed premium, and a cash-value component.",
-        "Cash value, if the contract has it, can be a reason to consider permanent coverage. Growth, access, and any guarantees depend on the specific contract and are not illustrated here.",
-        "Lincoln's public consumer pages present permanent coverage largely as indexed universal life and variable universal life, alongside term. Whole life is explained here because it is the classic permanent comparison, not because this tool quotes a Lincoln whole life policy.",
-        "Permanent coverage generally costs more in the early years and involves more moving parts: charges, and for variable or indexed designs, limits on how cash value can change.",
+        "Lincoln's current public permanent materials list indexed universal life and variable universal life.",
+        "Those designs can include cash-value potential. Growth, access, charges, and lapse risk depend on the contract and are not illustrated here.",
+        "Permanent coverage generally costs more in the early years and involves more moving parts than term coverage.",
     ]
     if inputs.lifelong_legacy_goal:
         permanent_points.insert(0, f"You set a lifelong goal of {fmt(inputs.lifelong_legacy_goal)}. A term period would not, by itself, still be in force after it expires.")
     if inputs.cash_value_interest:
         permanent_points.insert(0, "You mentioned an interest in cash value. That question belongs with permanent coverage, with the contract charges made explicit by a professional.")
-    if suggested and profile["temporary"] == "High" and profile["lifelong"] == "Low":
-        fit_term = "The needs you have actually named line up with a defined period."
+    if profile["temporary"] == "High" and profile["lifelong"] == "Low":
+        fit_term = "The needs you have actually named have end dates."
         fit_permanent = "A lifelong contract is a different goal than the one currently on your map."
     elif profile["lifelong"] in {"Medium", "High"}:
         fit_term = "Term coverage can still match the part of the need that ends."
         fit_permanent = "The lifelong piece is the part a term period is not built to carry."
     else:
-        fit_term = "Term coverage is the usual starting point when the goals have end dates."
+        fit_term = "Term coverage is the usual reference point when the goals have end dates."
         fit_permanent = "Permanent coverage becomes relevant if a goal should outlast those end dates."
 
     return {
         "headline": profile["headline"],
         "summary": term_period,
-        "suggested_term_years": suggested,
+        "suggested_term_years": None,
+        "periods": periods,
+        "whole_life": {
+            "title": "Whole life",
+            "kicker": "Educational comparison",
+            "statement": "Whole life is one form of permanent insurance. Lincoln Financial does not currently offer whole-life policies.",
+        },
+        "lincoln_categories": {
+            "term": ["Limited period", "Generally lower initial cost", "No cash-value growth"],
+            "permanent": ["Indexed universal life", "Variable universal life", "Cash-value potential, with contract charges and risks"],
+        },
         "term": {
-            "title": "Term insurance",
+            "title": "Term",
             "fit": fit_term,
             "points": term_points,
         },
         "permanent": {
-            "title": "Permanent coverage, including whole life",
+            "title": "Permanent",
             "fit": fit_permanent,
             "points": permanent_points,
         },
         "lincoln_note": (
-            "Lincoln's public materials distinguish term coverage from permanent coverage, and they point people toward a financial professional "
-            "before a product decision. This panel is education for your timeline. It is not a product recommendation, a premium, or an illustration."
+            "This panel teaches the difference between a time-bound need and a lifelong one. "
+            "It is not a product recommendation, a premium, or an illustration."
         ),
         "sources": [
             {
@@ -870,6 +1022,8 @@ def _missing(inputs: Inputs) -> list[dict[str, Any]]:
 
     if not inputs.dependents_confirmed:
         add("dependents", "Who depends on your income", True)
+    elif any(item.age is None for item in inputs.dependents):
+        add("dependent_ages", "Ages of the people who depend on you", True)
     if inputs.annual_income is None and not _closed(inputs, "annual_income"):
         add("annual_income", "Income", True)
     if inputs.mortgage_balance is None and not _closed(inputs, "mortgage_balance"):
@@ -878,10 +1032,8 @@ def _missing(inputs: Inputs) -> list[dict[str, Any]]:
         add("other_debt", "Other debt", True)
     if inputs.existing_employer_coverage is None and not _closed(inputs, "existing_employer_coverage"):
         add("existing_employer_coverage", "Coverage through work", True)
-    if inputs.include_education is None and inputs.dependents_confirmed and inputs.dependents:
+    if inputs.include_education is None and inputs.dependents_confirmed and inputs.dependents and all(item.age is not None for item in inputs.dependents):
         add("include_education", "Whether to include education", True)
-    if inputs.dependents_confirmed and any(item.age is None for item in inputs.dependents):
-        add("dependent_ages", "Ages of the people who depend on you", True)
     if inputs.annual_income and inputs.income_replacement_years is None and not _closed(inputs, "income_replacement_years"):
         add("income_replacement_years", "How many years of income to replace", False)
     if inputs.existing_personal_coverage is None and not _closed(inputs, "existing_personal_coverage"):
@@ -1039,3 +1191,46 @@ def life_event_patch(event: str, inputs: Inputs) -> dict[str, Any] | None:
         patch["sources"] = {"income_replacement_years": "user"}
         note = f"Shortens income support from {current} years to {max(5, current - 5)} years."
     return {"label": label, "patch": patch, "note": note, "empty": False}
+
+
+def _biggest_levers(inputs: Inputs, base_gap: int) -> list[dict[str, Any]]:
+    """Show which ordinary choices move the estimate the most. Does not recurse into itself."""
+
+    ideas: list[dict[str, Any]] = []
+
+    def consider(title: str, patch: dict[str, Any], why: str) -> None:
+        gap = calculate(apply_patch(inputs, patch), include_levers=False)["gap"]
+        delta = gap - base_gap
+        if delta == 0:
+            return
+        direction = "lowers" if delta < 0 else "raises"
+        ideas.append(
+            {
+                "title": title,
+                "delta": delta,
+                "amount": abs(delta),
+                "explanation": f"{why} This {direction} the estimate by {fmt(abs(delta))}.",
+            }
+        )
+
+    years = inputs.income_replacement_years or (DEFAULT_REPLACEMENT_YEARS if inputs.annual_income else None)
+    if inputs.annual_income and years and years != 5:
+        consider(
+            "How long your family would have income support",
+            {"profile": {"income_replacement_years": 5}, "sources": {"income_replacement_years": "user"}},
+            f"Using 5 years of support instead of {years}.",
+        )
+    if (inputs.mortgage_balance or 0) > 0:
+        consider(
+            "Your remaining mortgage",
+            {"profile": {"mortgage_balance": 0}, "sources": {"mortgage_balance": "user"}},
+            "Leaving the mortgage out.",
+        )
+    if inputs.include_education:
+        consider(
+            "Education goals",
+            {"clear_education": True, "sources": {"include_education": "user"}},
+            "Leaving education out.",
+        )
+    ideas.sort(key=lambda item: item["amount"], reverse=True)
+    return ideas[:3]

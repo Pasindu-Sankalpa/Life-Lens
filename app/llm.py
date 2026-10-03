@@ -16,7 +16,7 @@ LLM_API_KEY = os.environ.get("LIFELENS_LLM_API_KEY", "local")
 
 _STATUS: dict[str, Any] = {"checked_at": 0.0, "payload": None}
 
-SYSTEM_PROMPT = """You are the conversational interface for LifeLens, a life-insurance needs analysis.
+SYSTEM_PROMPT = """You are the conversational interface for LincolnLens, a life-insurance needs analysis.
 
 Your job is to understand the user's financial situation, identify missing information, and explain results clearly.
 
@@ -52,7 +52,14 @@ Tools:
 - retrieve_lincoln_guidance: read approved educational notes
 - compare_coverage_types: read the term versus permanent comparison for this household
 
-Return tool calls when they apply. If you also write prose, do not put dollar amounts in it.
+You may propose facts. You may not save them. Return proposals the backend will validate:
+
+{"field": "annual_income", "value": 110000, "evidence": "I make about 110k", "confidence": 0.9}
+
+The evidence string must be copied from the user's message. If you cannot point at the words, omit the proposal.
+
+Return tool calls or one JSON object with proposals, profile_updates, scenario_patch, life_event, topics, and preface.
+If you also write prose, do not put dollar amounts in it.
 """
 
 TOOLS = [
@@ -270,10 +277,11 @@ def _normalize_message(message: dict[str, Any]) -> dict[str, Any]:
     parsed = _loose_json(content)
     if not tool_calls and isinstance(parsed, dict):
         updates = parsed.get("profile_updates") or parsed.get("update_customer_profile") or {}
-        if updates or parsed.get("dependents"):
+        proposals = parsed.get("proposals") or []
+        if updates or parsed.get("dependents") or proposals:
             tool_calls.append({
                 "name": "update_customer_profile",
-                "arguments": {**updates, "dependents": parsed.get("dependents")},
+                "arguments": {**updates, "dependents": parsed.get("dependents"), "proposals": proposals},
             })
         scenario = parsed.get("scenario_patch") or parsed.get("simulate_scenario")
         if isinstance(scenario, dict) and scenario:

@@ -11,7 +11,7 @@ import math
 import re
 from typing import Any
 
-KNOWLEDGE_VERSION = "1"
+KNOWLEDGE_VERSION = "2026-10-03.2"
 
 CHUNKS: list[dict[str, str]] = [
     {
@@ -53,24 +53,24 @@ CHUNKS: list[dict[str, str]] = [
             "potential. Lincoln's public permanent materials discuss cash-value potential, flexibility, and the possibility "
             "of living-benefit riders. Those features come with qualifications: costs, investment risk on some designs, "
             "the effect of withdrawals and loans, and the risk that a policy can lapse if it is not funded as required. "
-            "LifeLens does not illustrate cash value, loans, or riders."
+            "LincolnLens does not illustrate cash value, loans, or riders."
         ),
     },
     {
         "slug": "whole-life",
         "topic": "whole",
-        "title": "Whole life inside the permanent category",
-        "source_name": "LifeLens educational note, alongside Lincoln's permanent-life pages",
+        "title": "Whole life is an educational comparison",
+        "source_name": "Lincoln Financial",
         "source_url": "https://www.lincolnfinancial.com/public/individuals/products/lifeinsurance/permanentlife",
+        "retrieved_at": "2026-10-03",
+        "topics": "whole,permanent",
         "content": (
-            "Whole life is a traditional form of permanent insurance. In general, it is designed to provide a death benefit "
-            "for the insured person's lifetime, often with a fixed premium schedule and a cash-value component. It is "
-            "usually more expensive in the early years than term insurance of the same face amount, because the contract "
-            "is built to last and to accumulate cash value under the policy's terms. Guarantees, dividends, and access to "
-            "cash value are contract-specific and are not calculated here. Lincoln's current public consumer navigation "
-            "presents permanent coverage with emphasis on indexed and variable universal life, rather than leading with a "
-            "whole life product page. Use whole life as the educational comparison, and use Lincoln's term and permanent "
-            "categories when handing off to a professional."
+            "Whole life is one form of permanent insurance: a death benefit designed to last for a lifetime, often with a "
+            "fixed premium schedule and a cash-value component. It is generally more expensive in the early years than term "
+            "coverage of the same face amount. Lincoln's current public permanent-life materials describe indexed universal "
+            "life and variable universal life. They do not present a whole-life policy. Use whole life only as an educational "
+            "comparison. Use Lincoln's term and permanent categories when handing off to a professional. Cash value, guarantees, "
+            "and charges are contract-specific and are not calculated here."
         ),
     },
     {
@@ -84,7 +84,7 @@ CHUNKS: list[dict[str, str]] = [
             "account whose value can change. Indexed designs credit interest using a reference to a market index, within "
             "limits described in the contract, and do not invest the cash value directly in the market. Variable designs "
             "can invest in underlying options and can lose value. Both involve charges. Withdrawals, loans, and skipped "
-            "premiums can increase the chance a policy lapses. None of those mechanics are projected in LifeLens."
+            "premiums can increase the chance a policy lapses. None of those mechanics are projected in LincolnLens."
         ),
     },
     {
@@ -105,12 +105,12 @@ CHUNKS: list[dict[str, str]] = [
         "slug": "affordability",
         "topic": "affordability",
         "title": "Affordability is a priority conversation",
-        "source_name": "LifeLens planning note",
+        "source_name": "LincolnLens planning note",
         "source_url": "https://www.lincolnfinancial.com/public/individuals/products/lifeinsurance",
         "content": (
             "A calculated gap is not a bill and not a face amount someone must buy. If the full gap is more than the "
             "household wants to insure, the useful question is which obligations stay covered at a smaller amount: the "
-            "mortgage, other debt, a shorter income runway, or education. LifeLens shows that tradeoff in the stress test. "
+            "mortgage, other debt, a shorter income runway, or education. LincolnLens shows that tradeoff in the stress test. "
             "It does not estimate premiums, underwriting class, or what a household can afford."
         ),
     },
@@ -118,12 +118,12 @@ CHUNKS: list[dict[str, str]] = [
         "slug": "employer-coverage",
         "topic": "existing-coverage",
         "title": "Work coverage and personal coverage are not interchangeable",
-        "source_name": "LifeLens planning note",
+        "source_name": "LincolnLens planning note",
         "source_url": "https://www.lincolnfinancial.com/public/individuals/products/lifeinsurance",
         "content": (
             "Group life insurance through an employer can be a real part of today's protection. It may also be tied to "
             "the job. Counting it toward a 20-year family timeline assumes it will still be there, which may be wrong "
-            "after a job change. Personal coverage is owned by the individual. LifeLens subtracts both when the person "
+            "after a job change. Personal coverage is owned by the individual. LincolnLens subtracts both when the person "
             "reports them, and it asks a professional question about portability rather than assuming the work amount lasts."
         ),
     },
@@ -134,7 +134,7 @@ CHUNKS: list[dict[str, str]] = [
         "source_name": "Lincoln Financial public getting-started page",
         "source_url": "https://www.lincolnfinancial.com/public/individuals/products/lifeinsurance/readytogetstarted",
         "content": (
-            "LifeLens is an educational needs analysis. It does not underwrite, quote a premium, recommend a Lincoln "
+            "LincolnLens is an educational needs analysis. It does not underwrite, quote a premium, recommend a Lincoln "
             "product, predict health risk, or give tax or legal advice. Lincoln's public pages direct people who are "
             "ready to act toward a financial professional. The handoff in this product is a one-page summary of the "
             "person's own timeline and a short list of questions, not an application."
@@ -143,8 +143,8 @@ CHUNKS: list[dict[str, str]] = [
     {
         "slug": "needs-math",
         "topic": "method",
-        "title": "How the protection gap is computed",
-        "source_name": "LifeLens coverage engine",
+        "title": "How the protection gap is worked out",
+        "source_name": "LincolnLens",
         "source_url": "https://www.lincolnfinancial.com/public/individuals/products/lifeinsurance",
         "content": (
             "The gap equals income replacement plus mortgage payoff plus other debt plus education goals plus any other "
@@ -152,7 +152,7 @@ CHUNKS: list[dict[str, str]] = [
             "earmarked. Income replacement equals annual income times a replacement percent times a number of years. "
             "No inflation rate and no discount rate are applied. Ten years and 70 percent are assumptions until the "
             "person replaces them. Education uses an amount the person enters, or a labeled placeholder of $100,000 per "
-            "child. The language model is not allowed to produce these figures."
+            "child. The dollar figures always come from those steps, not from a guess."
         ),
     },
 ]

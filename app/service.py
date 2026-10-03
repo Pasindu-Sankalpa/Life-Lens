@@ -196,15 +196,52 @@ def state(db: Session, session_id: str) -> dict[str, Any]:
     }
 
 
+def _catch_ages(text: str, profile: ProfileRow, extracted: dict[str, Any]) -> None:
+    """If children are already on the plan and the reply is just ages, record the ages."""
+
+    if not any(child.age is None for child in profile.dependents):
+        return
+    if re.search(r"\$|\b(?:k|grand|earn|income|salary|mortgage|owe)\b", text.lower()):
+        return
+    ages = [int(number) for number in re.findall(r"\b\d{1,2}\b", text)]
+    if not ages or len(ages) > 6 or any(age > 30 for age in ages):
+        return
+    extracted["updates"].pop("annual_income", None)
+    extracted["dependents"] = [
+        {"age": age, "label": f"Child {index + 1}", "education_goal": None, "education_is_estimate": False}
+        for index, age in enumerate(ages)
+    ]
+    extracted["dependents_mode"] = "fill_ages"
+    extracted["heard"] = [f"children ages {' and '.join(str(age) for age in ages)}"]
+
+
 def delete_session(db: Session, session_id: str) -> None:
     session = _session(db, session_id)
     db.delete(session)
     db.commit()
 
 
+def delete_all_sessions(db: Session) -> None:
+    for session in db.scalars(select(SessionRow)).all():
+        db.delete(session)
+    db.commit()
+
+
 def set_mode(db: Session, session_id: str, mode: str) -> dict[str, Any]:
     session = _session(db, session_id)
     session.mode = mode if mode in {"quick", "guided"} else session.mode
+    profile = session.profile
+    started = any(message.role == "user" for message in session.messages)
+    if profile is not None and not started:
+        opening, questions = _opening(profile, session.mode)
+        assistants = [message for message in session.messages if message.role == "assistant"]
+        if assistants:
+            first = min(assistants, key=lambda message: _ts(message.created_at))
+            first.content = opening
+            first.payload = {"questions": questions, "tools": []}
+        else:
+            _add_message(db, session, "assistant", opening, {"questions": questions, "tools": []})
+        session.last_question_key = questions[0]["key"] if questions else None
     session.updated_at = utcnow()
     db.commit()
     return state(db, session_id)
@@ -229,11 +266,14 @@ def handle_message(db: Session, session_id: str, content: str) -> dict[str, Any]
             tool_trace.append({"name": "llm", "status": "unavailable", "detail": llm["error"]})
         preface = _safe_preface(llm.get("preface") or "")
         _apply_llm_tools(text, extracted, llm.get("tool_calls") or [], tool_trace)
-        for call in llm.get("tool_calls") or []:
-            if call["name"] == "retrieve_lincoln_guidance":
-                retrieval_query = call["arguments"].get("query") or retrieval_query or text
+        if extracted["is_education_question"]:
+            for call in llm.get("tool_calls") or []:
+                if call["name"] == "retrieve_lincoln_guidance" and call["arguments"].get("query"):
+                    retrieval_query = call["arguments"]["query"]
     else:
         tool_trace.append({"name": "llm", "status": "offline", "detail": "Private model is not reachable. The extractor is handling this turn."})
+
+    _catch_ages(text, profile, extracted)
 
     if extracted["life_event"] and not (extracted["scenario_patch"] and extracted["scenario_patch"].get("profile")):
         return _preview_event(db, session, extracted["life_event"], preface, tool_trace)
@@ -277,6 +317,10 @@ def handle_message(db: Session, session_id: str, content: str) -> dict[str, Any]
     questions = questions_for(_question_keys(base_inputs, session.mode))
     if extracted.get("education_choice") == "unknown":
         questions = questions_for(["include_education"])
+    if questions:
+        preface = ""
+    if not extracted["is_education_question"]:
+        notes = []
     reply = _compose(
         extracted=extracted,
         base_calc=base_calc,
@@ -471,9 +515,8 @@ def serialize_profile(profile: ProfileRow) -> dict[str, Any]:
 
 
 DISCLAIMER = (
-    "LifeLens is an educational needs-analysis tool. It does not provide insurance, tax, or investment advice, "
-    "and it does not quote premiums or recommend a specific product. Every coverage figure is an estimate from the "
-    "assumptions shown. Talk with a licensed financial professional before making a decision."
+    "Planning estimate, not a quote. LincolnLens helps explore potential coverage needs based on the information "
+    "and assumptions shown. It does not determine eligibility, premiums, underwriting outcomes, or provide a policy recommendation."
 )
 
 
@@ -523,8 +566,33 @@ def _apply_llm_tools(text: str, extracted: dict[str, Any], calls: list[dict[str,
         arguments = call.get("arguments") or {}
         if name == "update_customer_profile":
             accepted = {}
+            for proposal in arguments.get("proposals") or []:
+                if not isinstance(proposal, dict):
+                    continue
+                key = proposal.get("field")
+                if key not in PROFILE_FIELDS or key in extracted["updates"] or key in accepted:
+                    continue
+                cleaned = _clean_field(key, proposal.get("value"))
+                evidence = " ".join(str(proposal.get("evidence") or "").split())
+                if cleaned is None:
+                    trace.append({"name": "validate_profile_update", "status": "rejected", "field": key, "reason": "Value failed type or range checks."})
+                    continue
+                if evidence and evidence.lower() not in text.lower():
+                    trace.append({"name": "validate_profile_update", "status": "rejected", "field": key, "reason": "Evidence was not in the message."})
+                    continue
+                if not _grounded(text, key, cleaned):
+                    trace.append({"name": "validate_profile_update", "status": "rejected", "field": key, "reason": "Number was not in the message."})
+                    continue
+                accepted[key] = cleaned
+                trace.append({
+                    "name": "validate_profile_update",
+                    "status": "ok",
+                    "field": key,
+                    "evidence": evidence,
+                    "confidence": proposal.get("confidence"),
+                })
             for key, value in arguments.items():
-                if key == "dependents":
+                if key in {"dependents", "proposals"}:
                     continue
                 if key not in PROFILE_FIELDS or key in extracted["updates"]:
                     continue
@@ -714,11 +782,16 @@ def _compose(
     if heard and scenario_calc is None:
         lines.append("Got it — " + ", ".join(heard) + ".")
     if scenario_calc is not None:
-        lines.append(
-            f"{scenario_label} moves the estimated protection gap from {fmt(base_calc['gap'])} to {fmt(scenario_calc['gap'])}."
-        )
+        delta = scenario_calc["gap"] - base_calc["gap"]
+        if delta < 0:
+            lines.append(f"Your estimate decreased by {fmt(-delta)}.")
+        elif delta > 0:
+            lines.append(f"Your estimate increased by {fmt(delta)}.")
+        else:
+            lines.append("Your estimate stays the same.")
         if scenario_note:
-            lines.append(scenario_note)
+            lines.append(f"Why? {scenario_note}")
+        lines.append(f"It moves from {fmt(base_calc['gap'])} to {fmt(scenario_calc['gap'])}.")
         lines.append("This is a preview. The saved plan stays as it is until you keep the change.")
     elif base_calc["ready"]:
         if base_calc["completeness"] == "partial":
@@ -727,7 +800,7 @@ def _compose(
             )
         else:
             lines.append(f"The estimated protection gap is {fmt(base_calc['gap'])}.")
-        lines.append("That figure is produced by the coverage engine. The model does not do the arithmetic.")
+        lines.append("You can see each piece on the right, and change any assumption.")
         assumed = [item for item in base_calc["assumptions"] if item["source"] in {"assumption", "estimated"}]
         if any(item["key"] == "income_replacement_years" for item in assumed):
             lines.append("Income support is using 10 years at 70% of income until you choose otherwise.")
@@ -750,8 +823,8 @@ def _compose(
         lines.append(note_prose)
     elif notes and extracted.get("is_education_question"):
         lines.append(notes[0]["content"])
-    if notes:
-        lines.append("Sources are listed with the answer. They are educational notes linked to public Lincoln pages, not a product recommendation.")
+    if notes and extracted.get("is_education_question"):
+        lines.append("These notes are linked to Lincoln’s public pages. They are not a product recommendation.")
     return "\n\n".join(line for line in lines if line)
 
 
@@ -792,10 +865,21 @@ def _notes(db: Session, query: str) -> list[dict[str, Any]]:
 
 
 def _public_notes(notes: list[dict[str, Any]]) -> list[dict[str, str]]:
-    return [
-        {"title": note["title"], "source_name": note["source_name"], "source_url": note["source_url"], "content": note["content"]}
-        for note in notes
-    ]
+    catalog = {chunk["title"]: chunk for chunk in CHUNKS}
+    published = []
+    for note in notes:
+        meta = catalog.get(note["title"], {})
+        published.append(
+            {
+                "title": note["title"],
+                "source_name": note["source_name"],
+                "source_url": note["source_url"],
+                "content": note["content"],
+                "retrieved_at": str(meta.get("retrieved_at") or "2026-10-03"),
+                "topics": str(meta.get("topics") or note.get("topic") or ""),
+            }
+        )
+    return published
 
 
 def _question_keys(inputs: Inputs, mode: str) -> list[str]:
@@ -830,7 +914,21 @@ def _scenario_label(patch: dict[str, Any], text: str) -> str:
 
 
 def _store_calculation(db: Session, session: SessionRow, result: dict[str, Any], kind: str, label: str) -> None:
-    db.add(CalculationRow(id=new_id(), session_id=session.id, kind=kind, label=label, result=result))
+    audit = result.get("audit") or {}
+    db.add(
+        CalculationRow(
+            id=new_id(),
+            session_id=session.id,
+            kind=kind,
+            label=label,
+            result=result,
+            engine_version=str(audit.get("engine_version") or "1.0"),
+            knowledge_version=str(audit.get("knowledge_version") or KNOWLEDGE_VERSION),
+            input_snapshot={"facts": result.get("facts") or []},
+            assumption_snapshot={"assumptions": result.get("assumptions") or [], "income_assumption": result.get("income_assumption")},
+            output_snapshot={"gap": result.get("gap"), "gross_need": result.get("gross_need"), "components": result.get("components")},
+        )
+    )
 
 
 def _store_scenario(

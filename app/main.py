@@ -17,6 +17,7 @@ from app.service import (
     apply_scenario,
     compare_view,
     create_session,
+    delete_all_sessions,
     delete_session,
     discard_scenario,
     handle_message,
@@ -55,7 +56,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="LifeLens", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="LincolnLens", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -128,6 +129,12 @@ def health() -> dict[str, Any]:
 @app.get("/api/sessions")
 def sessions(db: Session = Depends(db_session)) -> list[dict[str, Any]]:
     return list_sessions(db)
+
+
+@app.delete("/api/sessions")
+def remove_all_sessions(db: Session = Depends(db_session)) -> dict[str, bool]:
+    delete_all_sessions(db)
+    return {"ok": True}
 
 
 @app.post("/api/sessions")

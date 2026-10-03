@@ -4,24 +4,24 @@ from __future__ import annotations
 
 QUESTIONS: dict[str, dict[str, str]] = {
     "dependents": {
-        "prompt": "Who depends on your income?",
-        "why": "People who rely on your income are the reason a protection period exists. Children, a partner, or anyone else you support changes how long that period lasts.",
-        "hint": "For example: “Two kids, ages 3 and 7” or “No one else depends on me.”",
+        "prompt": "Who relies on you financially?",
+        "why": "If your family wanted to stay housed and supported, the people who rely on you are the reason a plan exists. Children, a partner, or anyone else you support changes how long that lasts.",
+        "hint": "For example: “Two kids, ages 3 and 7” or “No one else.”",
     },
     "dependent_ages": {
-        "prompt": "How old are the people who depend on you?",
-        "why": "Ages turn “I have kids” into a timeline. Dependency and education windows are counted to age 22, and only if you tell us the ages.",
-        "hint": "Ages are enough: “3 and 7”.",
+        "prompt": "How old are they?",
+        "why": "Ages show how long each person relies on you. We follow that through age 22, which is what draws the lines on your life map.",
+        "hint": "Ages are enough, such as “3 and 7”.",
     },
     "annual_income": {
-        "prompt": "What income would your household lose?",
-        "why": "We use income to estimate financial support the household could lose. The engine multiplies it by a replacement percent and a number of years — both visible, both changeable.",
-        "hint": "A rough annual number is fine.",
+        "prompt": "About how much do you earn in a year?",
+        "why": "Income is how we estimate the support to include in the plan. You choose what share to replace, and for how many years. Both are shown, and both can be changed.",
+        "hint": "A rough annual number is fine, such as “$110k”.",
     },
     "mortgage_balance": {
-        "prompt": "How much remains on your mortgage?",
-        "why": "A mortgage is an obligation the household may need to keep paying. Including the balance estimates how much coverage could allow them to remain in the home. Say zero if there isn’t one.",
-        "hint": "The current balance, or “no mortgage”.",
+        "prompt": "About how much do you still owe on your home?",
+        "why": "If your family wanted to remain in the home, the remaining mortgage is one responsibility a plan can help cover. We use only the amount you enter, and you can leave it out later.",
+        "hint": "The current balance, “no mortgage”, or “I’m not sure”.",
     },
     "other_debt": {
         "prompt": "Is there other debt — student loans, a car, cards?",
@@ -44,9 +44,9 @@ QUESTIONS: dict[str, dict[str, str]] = {
         "hint": "Yes, no, a dollar amount, or “use a placeholder”.",
     },
     "income_replacement_years": {
-        "prompt": "How many years of income support do you want the plan to cover?",
-        "why": "A lump-sum need depends on how long the household should be able to replace income. Ten years is only a starting assumption until you choose a length.",
-        "hint": "For example: “7 years” or “until the youngest is 22”.",
+        "prompt": "If your income stopped, how long would you want your family to have support?",
+        "why": "The estimate depends on how long that support should last. If you are not sure, we can start with 10 years and you can see what changes when you pick 3 or 5.",
+        "hint": "3 years, 5 years, 10 years, or “I’m not sure”.",
     },
     "age": {
         "prompt": "How old are you?",
@@ -55,12 +55,12 @@ QUESTIONS: dict[str, dict[str, str]] = {
     },
     "partner": {
         "prompt": "Is there a partner in the household?",
-        "why": "A partner changes who the plan is for. This tool does not guess their income; it only records that the household is shared.",
+        "why": "A partner changes who the plan is for. We do not guess their income. We only note that the household is shared.",
         "hint": "Yes or no is enough.",
     },
     "savings_allocated": {
         "prompt": "Are there savings you want counted against this need?",
-        "why": "Money already set aside for the family reduces the gap. We only subtract savings you earmark. Everything else stays out of the formula.",
+        "why": "Money already set aside for the family reduces the gap. We only count savings you say can be used. Everything else stays out.",
         "hint": "An amount, or “don’t count any”.",
     },
     "lifelong_legacy_goal": {

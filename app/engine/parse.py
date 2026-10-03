@@ -207,8 +207,21 @@ def _ages_and_household(low: str, result: dict[str, Any]) -> None:
         result["sources"]["partner"] = "user"
         result["heard"].append("married" if "married" in low else "a partner")
 
+    if re.search(r"\b(a parent|parent or relative|a relative) relies\b", low):
+        result["dependents"] = [{"age": None, "label": "Parent", "education_goal": None, "education_is_estimate": False}]
+        result["dependents_mode"] = "replace"
+        result["updates"]["dependents_confirmed"] = True
+        result["heard"].append("a parent who relies on you")
+        return
+    if re.search(r"\bsomeone else relies\b", low):
+        result["dependents"] = [{"age": None, "label": "Someone else", "education_goal": None, "education_is_estimate": False}]
+        result["dependents_mode"] = "replace"
+        result["updates"]["dependents_confirmed"] = True
+        result["heard"].append("someone else who relies on you")
+        return
+
     if re.search(r"\b(no|zero|without)\s+(kids|children|dependents)\b", low) or re.search(
-        r"\bno one (else )?depends\b", low
+        r"\bno one (else )?(depends|relies)\b", low
     ):
         result["dependents_mode"] = "clear"
         result["updates"]["dependents_confirmed"] = True

@@ -21,6 +21,8 @@ export interface Note {
   source_name: string;
   source_url: string;
   content: string;
+  retrieved_at?: string;
+  topics?: string;
 }
 
 export interface Message {
@@ -113,6 +115,9 @@ export interface Comparison {
   headline: string;
   summary: string;
   suggested_term_years: number | null;
+  periods?: { years: number; relation: string }[];
+  whole_life?: { title: string; kicker: string; statement: string };
+  lincoln_categories?: { term: string[]; permanent: string[] };
   term: { title: string; fit: string; points: string[] };
   permanent: { title: string; fit: string; points: string[] };
   lincoln_note: string;
@@ -135,6 +140,19 @@ export interface Calculation {
   resource_order_note: string;
   facts: Fact[];
   assumptions: Fact[];
+  income_assumption?: {
+    annual_income: number;
+    percent: number;
+    percent_source: string;
+    years: number;
+    years_source: string;
+    amount: number;
+    headline: string;
+  } | null;
+  provenance?: { mark: string; label: string; value: string }[];
+  build_steps?: string[];
+  levers?: { title: string; delta: number; amount: number; explanation: string }[];
+  audit?: { engine_version: string; knowledge_version: string };
   timeline: {
     start_year: number;
     horizon: number;

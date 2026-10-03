@@ -28,6 +28,8 @@ export const api = {
   apply: (id: string, scenarioId: string) => request<AppState>(`/api/sessions/${id}/scenarios/${scenarioId}/apply`, { method: "POST" }),
   discard: (id: string, scenarioId: string) =>
     request<AppState>(`/api/sessions/${id}/scenarios/${scenarioId}/discard`, { method: "POST" }),
+  remove: (id: string) => request<{ ok: boolean }>(`/api/sessions/${id}`, { method: "DELETE" }),
+  clear: () => request<{ ok: boolean }>("/api/sessions", { method: "DELETE" }),
   stress: (id: string, coverage: number) =>
     request<{ sample: { coverage: number; items: { label: string; status: string; detail: string }[] } }>(
       `/api/sessions/${id}/stress`,

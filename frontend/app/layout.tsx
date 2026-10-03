@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LifeLens",
-  description: "A private life-insurance needs analysis that shows what the number protects.",
+  title: "LincolnLens",
+  description: "A local life-insurance needs analysis that shows what the number protects.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
