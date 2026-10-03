@@ -68,7 +68,6 @@ export default function Workspace({ sessionId }: { sessionId: string }) {
     <div className="app-shell">
       <header className="topbar no-print">
         <Link href="/" className="brand">
-          <div className="mark" aria-hidden><span /></div>
           <div>
             <strong>LincolnLens</strong>
             <small style={{ display: "block" }}>Private session</small>
